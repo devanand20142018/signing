@@ -244,6 +244,57 @@ decrypted_data = private_key.decrypt(
 
 
 
++++++++++++++++++++++++++++++++++++++++
+
+
+import csv
+import os
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives import serialization
+from cryptography.fernet import Fernet
+
+# Load your private key for signing
+with open("private_key.pem", "rb") as key_file:
+    private_key = serialization.load_pem_private_key(
+        key_file.read(),
+        password=None,
+        backend=default_backend()
+    )
+
+# Generate a symmetric key for encryption
+encryption_key = Fernet.generate_key()
+cipher_suite = Fernet(encryption_key)
+
+# List of CSV files to sign and encrypt
+csv_files = ["file1.csv", "file2.csv", "file3.csv", "file4.csv", "file5.csv", "file6.csv", "file7.csv", "file8.csv", "file9.csv"]
+
+for csv_file in csv_files:
+    # Read the CSV file
+    with open(csv_file, "r") as file:
+        csv_data = list(csv.reader(file))
+
+    # Convert CSV data to a string
+    csv_content = "\n".join([",".join(row) for row in csv_data])
+
+    # Sign the CSV data
+    signature = private_key.sign(csv_content.encode(), padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH), hashes.SHA256())
+
+    # Encrypt the data (including the signature)
+    encrypted_data = cipher_suite.encrypt(signature + csv_content.encode())
+
+    # Create a new file with the signed and encrypted data
+    encrypted_file_name = "encrypted_" + csv_file
+    with open(encrypted_file_name, "wb") as output_file:
+        output_file.write(encrypted_data)
+
+# Save the encryption key to a secure location (e.g., a key vault)
+with open("encryption_key.key", "wb") as key_file:
+    key_file.write(encryption_key)
+
+
+
 
 
 
