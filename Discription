@@ -1,6 +1,290 @@
 import os
 import csv
 from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.fernet import Fernet
+
+# Specify the source folder containing the files to sign and encrypt
+source_folder = "source_folder/"
+
+# Specify the destination folder to store the signed and encrypted files
+destination_folder = "destination_folder/"
+
+# Load your private key for signing
+with open("private_key.pem", "rb") as key_file:
+    private_key = serialization.load_pem_private_key(
+        key_file.read(),
+        password=None,
+        backend=default_backend()
+    )
+
+# Load the recipient's public key for encryption
+with open("public_key.pem", "rb") as key_file:
+    public_key = serialization.load_pem_public_key(
+        key_file.read(),
+        backend=default_backend()
+    )
+
+# List all files in the source folder
+file_list = os.listdir(source_folder)
+
+# Iterate through each file in the source folder
+for file_name in file_list:
+    # Construct the full path to the source file
+    source_file_path = os.path.join(source_folder, file_name)
+
+    # Read the file you want to sign and encrypt (e.g., CSV files)
+    with open(source_file_path, "rb") as file:
+        file_data = file.read()
+
+    # Sign the file
+    signature = private_key.sign(
+        file_data,
+        padding.PSS(
+            mgf=padding.MGF1(hashes.SHA256()),
+            salt_length=padding.PSS.MAX_LENGTH
+        ),
+        hashes.SHA256()
+    )
+
+    # Combine the signature and data
+    signed_data = signature + file_data
+
+    # Encrypt the signed data with the recipient's public key
+    encrypted_data = public_key.encrypt(
+        signed_data,
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None
+        )
+    )
+
+    # Construct the full path to the destination file with ".dsi" extension
+    destination_file_path = os.path.join(destination_folder, os.path.splitext(file_name)[0] + ".dsi")
+
+    # Save the encrypted data to the destination folder with the ".dsi" extension
+    with open(destination_file_path, "wb") as output_file:
+        output_file.write(encrypted_data)
+
+++++++++++++++++++++++++++++++++++
+
+
+
+import os
+import csv
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.fernet import Fernet
+
+# Specify the source folder containing the files to sign and encrypt
+source_folder = "source_folder/"
+
+# Specify the destination folder to store the signed and encrypted files
+destination_folder = "destination_folder/"
+
+# Generate a new RSA key pair (private and public keys)
+def generate_key_pair():
+    private_key = rsa.generate_private_key(
+        public_exponent=65537,
+        key_size=2048,  # You can adjust the key size as needed
+        backend=default_backend()
+    )
+
+    # Serialize and save the private key to a file (e.g., private_key.pem)
+    with open("private_key.pem", "wb") as key_file:
+        key_file.write(private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption()
+        ))
+
+    public_key = private_key.public_key()
+
+    # Serialize and save the public key to a file (e.g., public_key.pem)
+    with open("public_key.pem", "wb") as key_file:
+        key_file.write(public_key.public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo
+        ))
+
+    return private_key, public_key
+
+# Load your private key for signing
+def load_private_key():
+    with open("private_key.pem", "rb") as key_file:
+        private_key = serialization.load_pem_private_key(
+            key_file.read(),
+            password=None,
+            backend=default_backend()
+        )
+    return private_key
+
+# Load the recipient's public key for encryption
+def load_public_key():
+    with open("public_key.pem", "rb") as key_file:
+        public_key = serialization.load_pem_public_key(
+            key_file.read(),
+            backend=default_backend()
+        )
+    return public_key
+
+# Function to sign and encrypt a file
+def sign_and_encrypt_file(file_path, private_key, public_key):
+    # Read the file you want to sign and encrypt (e.g., CSV files)
+    with open(file_path, "r") as file:
+        file_data = file.read()
+
+    # Sign the file
+    signature = private_key.sign(
+        file_data.encode(),
+        padding.PSS(
+            mgf=padding.MGF1(hashes.SHA256()),
+            salt_length=padding.PSS.MAX_LENGTH
+        ),
+        hashes.SHA256()
+    )
+
+    # Combine the signature and data
+    signed_data = signature + file_data.encode()
+
+    # Encrypt the signed data with the recipient's public key
+    encrypted_data = public_key.encrypt(
+        signed_data,
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None
+        )
+    )
+
+    return encrypted_data
+
+# Function to decrypt and verify a file
+def decrypt_and_verify_file(encrypted_data, private_key, sender_public_key=None):
+    # Decrypt the data with your private key
+    decrypted_data = private_key.decrypt(
+        encrypted_data,
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None
+        )
+    )
+
+    # Separate the signature and data
+    signature = decrypted_data[:private_key.key_size // 8]
+    original_data = decrypted_data[private_key.key_size // 8:]
+
+    # Verify the digital signature (optional, if you have the sender's public key)
+    if sender_public_key:
+        try:
+            sender_public_key.verify(
+                signature,
+                original_data,
+                padding.PSS(
+                    mgf=padding.MGF1(hashes.SHA256()),
+                    salt_length=padding.PSS.MAX_LENGTH
+                ),
+                hashes.SHA256()
+            )
+            print("Signature verification: Success")
+        except Exception as e:
+            print(f"Signature verification: Failed ({e})")
+
+    return original_data
+
+# Create the destination folder if it doesn't exist
+if not os.path.exists(destination_folder):
+    os.makedirs(destination_folder)
+
+# Generate or load keys (only do this once)
+private_key, public_key = generate_key_pair()
+# private_key = load_private_key()
+# public_key = load_public_key()
+
+# List all files in the source folder
+file_list = os.listdir(source_folder)
+
+# Process each file in the source folder
+for file_name in file_list:
+    if file_name.endswith(".csv"):
+        # Construct the full path to the source file
+        source_file_path = os.path.join(source_folder,
+
+        # Construct the full path to the source file
+        source_file_path = os.path.join(source_folder, file_name)
+
+        # Sign and encrypt the file
+        encrypted_data = sign_and_encrypt_file(source_file_path, private_key, public_key)
+
+        # Construct the full path to the destination file with ".dsi" extension
+        destination_file_path = os.path.join(destination_folder, os.path.splitext(file_name)[0] + ".dsi")
+
+        # Save the encrypted data to the destination folder with the ".dsi" extension
+        with open(destination_file_path, "wb") as output_file:
+            output_file.write(encrypted_data)
+
+# Process encrypted files (decrypt and verify)
+for file_name in os.listdir(destination_folder):
+    if file_name.endswith(".dsi"):
+        # Construct the full path to the ".dsi" file
+        dsi_file_path = os.path.join(destination_folder, file_name)
+
+        # Read the ".dsi" file
+        with open(dsi_file_path, "rb") as file:
+            encrypted_data = file.read()
+
+        # Decrypt and verify the file
+        decrypted_data = decrypt_and_verify_file(encrypted_data, private_key, sender_public_key=None)
+
+        # Separate the signature and original data (if needed)
+        # signature = decrypted_data[:private_key.key_size // 8]
+        # original_data = decrypted_data[private_key.key_size // 8:]
+
+        # Process the decrypted data as needed (e.g., save to a new file)
+        decrypted_file_name = file_name.replace(".dsi", "_decrypted.csv")
+        decrypted_file_path = os.path.join(destination_folder, decrypted_file_name)
+
+        with open(decrypted_file_path, "w") as output_file:
+            output_file.write(decrypted_data.decode())
+
+# Notify when the process is complete
+print("File signing, encryption, decryption, and verification completed.")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import os
+import csv
+from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives import serialization
